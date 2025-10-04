@@ -1,14 +1,14 @@
-// import 'dart:io';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:postie/auth/controller/auth_controller.dart';
 import 'package:postie/common/utils/utils.dart';
 
 class UserInfoScreen extends ConsumerStatefulWidget {
   static const String routeName = '/user-information';
 
-  /// <-- Receive phone number from previous screen
+  /// Passed from OTP screen
   final String phoneNumber;
 
   const UserInfoScreen({super.key, required this.phoneNumber});
@@ -20,13 +20,13 @@ class UserInfoScreen extends ConsumerStatefulWidget {
 class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
   final _nameCtrl = TextEditingController();
   final _bioCtrl = TextEditingController();
-  final _phoneCtrl =
-      TextEditingController(); // will be set from widget.phoneNumber
+  final _phoneCtrl = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   File? _image;
+  bool _submitting = false;
 
-  // Palette (tuned to mock)
+  // Palette
   static const kBg = Color(0xFF0E0F12);
   static const kCard = Color(0xFF17191E);
   static const kHint = Color(0xFF8E94A3);
@@ -38,8 +38,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
   @override
   void initState() {
     super.initState();
-    // Prefill phone number in controller
-    _phoneCtrl.text = widget.phoneNumber;
+    _phoneCtrl.text = widget.phoneNumber; // read-only display
   }
 
   @override
@@ -52,26 +51,30 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
 
   Future<void> _pickImage() async {
     final img = await pickImageFromGallery(context);
-    if (img != null) {
-      setState(() => _image = img);
-    }
+    if (img != null) setState(() => _image = img);
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_submitting) return; // prevent double taps
     if (!_formKey.currentState!.validate()) return;
-    final name = _nameCtrl.text.trim();
-    final bio = _bioCtrl.text.trim();
-    final phone = _phoneCtrl.text.trim(); // this is prefilled from OTP screen
 
-    ref
-        .read(authControllerProvider)
-        .saveUserDataToFirebase(
-          context,
-          name,
-          bio, // adjust your controller if you have a separate bio param
-          _image,
-          // Add `phone` here if your controller supports saving phone number
-        );
+    setState(() => _submitting = true);
+    try {
+      final name = _nameCtrl.text.trim();
+      final bio = _bioCtrl.text.trim();
+
+      await ref
+          .read(authControllerProvider)
+          .saveUserDataToFirebase(context, name, bio, _image);
+      // Navigation to MobileScreenLayout happens inside the repository
+      // after successful write (as in your existing code).
+    } catch (e) {
+      // showSnackBar is used inside repository on errors,
+      // but we also guard here for any unexpected error.
+      showSnackBar(context: context, content: e.toString());
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   InputDecoration _fieldDecoration({
@@ -115,7 +118,9 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: _submitting
+                        ? null
+                        : () => Navigator.pop(context),
                     icon: const Icon(
                       Icons.arrow_back_ios_new_rounded,
                       color: kText,
@@ -142,7 +147,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                   key: _formKey,
                   child: Column(
                     children: [
-                      // Avatar + label
+                      // Avatar
                       const SizedBox(height: 4),
                       Stack(
                         alignment: Alignment.bottomRight,
@@ -162,7 +167,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                                 : null,
                           ),
                           GestureDetector(
-                            onTap: _pickImage,
+                            onTap: _submitting ? null : _pickImage,
                             child: Container(
                               width: 36,
                               height: 36,
@@ -200,9 +205,9 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                       const SizedBox(height: 22),
 
                       // Name
-                      Align(
+                      const Align(
                         alignment: Alignment.centerLeft,
-                        child: const Text(
+                        child: Text(
                           'Name',
                           style: TextStyle(
                             color: kText,
@@ -214,6 +219,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _nameCtrl,
+                        enabled: !_submitting,
                         style: const TextStyle(color: kText, fontSize: 15),
                         cursorColor: kYellow,
                         decoration: _fieldDecoration(
@@ -230,9 +236,9 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                       const SizedBox(height: 16),
 
                       // Bio
-                      Align(
+                      const Align(
                         alignment: Alignment.centerLeft,
-                        child: const Text(
+                        child: Text(
                           'Bio',
                           style: TextStyle(
                             color: kText,
@@ -244,6 +250,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _bioCtrl,
+                        enabled: !_submitting,
                         maxLines: 4,
                         style: const TextStyle(color: kText, fontSize: 15),
                         cursorColor: kYellow,
@@ -258,12 +265,12 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Phone
-                      Align(
+                      // Phone (read-only)
+                      const Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          "Phone Number", // <-- Replaced static text with phone number
-                          style: const TextStyle(
+                          "Phone Number",
+                          style: TextStyle(
                             color: kText,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -277,7 +284,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                         style: const TextStyle(color: kText, fontSize: 15),
                         cursorColor: kYellow,
                         decoration: _fieldDecoration(
-                          hint: widget.phoneNumber, // <-- Replaced hint too
+                          hint: widget.phoneNumber,
                           prefixIcon: const Icon(
                             Icons.phone_rounded,
                             color: kHint,
@@ -292,7 +299,6 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                           ),
                         ),
                       ),
-
                       const SizedBox(height: 28),
 
                       // Continue button
@@ -300,7 +306,7 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                         width: double.infinity,
                         height: 54,
                         child: ElevatedButton(
-                          onPressed: _save,
+                          onPressed: _submitting ? null : _save,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: kYellow,
                             foregroundColor: Colors.black,
@@ -313,7 +319,18 @@ class _UserInfoScreenState extends ConsumerState<UserInfoScreen> {
                               fontWeight: FontWeight.w800,
                             ),
                           ),
-                          child: const Text('Continue'),
+                          child: _submitting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation(
+                                      Colors.black,
+                                    ),
+                                  ),
+                                )
+                              : const Text('Continue'),
                         ),
                       ),
                     ],

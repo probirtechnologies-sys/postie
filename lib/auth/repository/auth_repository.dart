@@ -37,7 +37,7 @@ class AuthRepository {
     return user;
   }
 
-  void signInWithPhone(BuildContext context, String phoneNumber) async {
+  Future<void> signInWithPhone(BuildContext context, String phoneNumber) async {
     try {
       await auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
@@ -64,7 +64,7 @@ class AuthRepository {
     }
   }
 
-  void saveUserDataToFirestore({
+  Future<void> saveUserDataToFirestore({
     required String name,
     required File? profilePic,
     // required String dob,
@@ -109,7 +109,7 @@ class AuthRepository {
     }
   }
 
-  void verifyOTP({
+  Future<void> verifyOTP({
     required BuildContext context,
     required String verificationId,
     required String userOTP,
@@ -140,13 +140,13 @@ class AuthRepository {
         .map((event) => UserModel.fromMap(event.data()!));
   }
 
-  void setUserState(bool isOnline) async {
+  Future<void> setUserState(bool isOnline) async {
     await firestore.collection('users').doc(auth.currentUser!.uid).update({
       'isOnline': isOnline,
     });
   }
 
-  void addToFriendList(String uid, String ouid) async {
+  Future<void> addToFriendList(String uid, String ouid) async {
     await firestore
         .collection('users')
         .doc(uid)

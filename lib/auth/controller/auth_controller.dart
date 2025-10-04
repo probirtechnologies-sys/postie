@@ -1,74 +1,82 @@
+// lib/auth/controller/auth_controller.dart
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:postie/auth/repository/auth_repository.dart';
 import 'package:postie/models/user_model.dart';
 
-final authControllerProvider = Provider((ref) {
-  final authRepository = ref.watch(AuthRepositoryProvider);
-  return AuthController(authRepository: authRepository, ref: ref);
+/// DI for the controller
+final authControllerProvider = Provider<AuthController>((ref) {
+  final repo = ref.watch(AuthRepositoryProvider);
+  return AuthController(authRepository: repo, ref: ref);
 });
 
-final userDataAuthProvider = FutureProvider((ref) {
-  final authController = ref.watch(authControllerProvider);
-  return authController.getUserData();
+/// Reactive current-user stream (null when signed out)
+/// Uses Firestore user doc, which mirrors presence fields (isOnline/lastSeen).
+final userDataAuthProvider = StreamProvider<UserModel?>((ref) {
+  final repo = ref.watch(AuthRepositoryProvider);
+  final uid = repo.auth.currentUser?.uid;
+  if (uid == null) return Stream<UserModel?>.value(null);
+  return repo.userData(uid).map((u) => u); // UserModel
 });
 
 class AuthController {
   final AuthRepository authRepository;
   final Ref ref;
-
   AuthController({required this.authRepository, required this.ref});
 
-  Future<UserModel?> getUserData() async {
-    UserModel? user = await authRepository.getCurrentUserData();
-    return user;
+  // ---------- Reads ----------
+
+  /// One-shot fetch of the current user's data (nullable).
+  Future<UserModel?> getUserData() => authRepository.getCurrentUserData();
+
+  /// Stream user by id (for viewing other profiles).
+  Stream<UserModel> userDataById(String userId) =>
+      authRepository.userData(userId);
+
+  // ---------- Auth flows ----------
+
+  Future<void> signInWithPhone(BuildContext context, String phoneNumber) async {
+    await authRepository.signInWithPhone(context, phoneNumber);
   }
 
-  void signInWithPhone(BuildContext context, String phoneNumber) {
-    authRepository.signInWithPhone(context, phoneNumber);
-  }
-
-  void verifyOTP(
+  Future<void> verifyOTP(
     BuildContext context,
     String verificationId,
     String userOTP,
-    String phonenumber,
-  ) {
-    authRepository.verifyOTP(
+    String phoneNumber,
+  ) async {
+    await authRepository.verifyOTP(
       context: context,
       verificationId: verificationId,
       userOTP: userOTP,
-      phoneNumber: phonenumber,
+      phoneNumber: phoneNumber,
     );
   }
 
-  void saveUserDataToFirebase(
+  // ---------- Profile creation / update ----------
+
+  /// Called after OTP flow from your User Information screen.
+  Future<void> saveUserDataToFirebase(
     BuildContext context,
     String name,
-    // String dob,
-    // String email,
     String bio,
     File? profilePic,
-  ) {
-    authRepository.saveUserDataToFirestore(
+  ) async {
+    await authRepository.saveUserDataToFirestore(
       name: name,
       bio: bio,
       profilePic: profilePic,
-
-      // dob: dob,
-      // email: email,
       ref: ref,
       context: context,
     );
   }
 
-  Stream<UserModel> userDataById(String userId) {
-    return authRepository.userData(userId);
-  }
+  // ---------- Presence (RTDB as source of truth) ----------
 
-  void setUserState(bool isOnline) async {
-    authRepository.setUserState(isOnline);
+  /// Flip presence (updates RTDB instantly & mirrors Firestore isOnline/lastSeen).
+  Future<void> setUserState(bool isOnline) async {
+    await authRepository.setUserState(isOnline);
   }
 }
